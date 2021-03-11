@@ -14,17 +14,36 @@ contract Wallet {
         uint256 id;
     }
 
+    event TransferRequestCreated(
+        uint256 _id,
+        uint256 _amount,
+        address _initiator,
+        address _receiver
+    );
+    event ApprovalReceived(uint256 _id, uint256 _approvals, address _approver);
+    event TransferApproved(uint256 _id);
+
     Transfer[] transferRequests;
 
     mapping(address => mapping(uint256 => bool)) approvals;
 
     // Should only allow people in the owners list to continue the execution.
     modifier onlyOwners() {
+        bool owner = false;
+        for (uint256 i = 0; i < owners.length; i++) {
+            if (owners[i] == msg.sender) {
+                owner = true;
+            }
+        }
+        require(owner == true);
         _;
     }
 
     // Should initialize the owners list and the limit
-    constructor(address[] memory _owners, uint256 _limit) {}
+    constructor(address[] memory _owners, uint256 _limit) {
+        owners = _owners;
+        limit = _limit;
+    }
 
     // Empty function
     function deposit() public payable {}
@@ -33,7 +52,17 @@ contract Wallet {
     function createTransfer(uint256 _amount, address payable _receiver)
         public
         onlyOwners
-    {}
+    {
+        emit TransferRequestCreated(
+            transferRequests.length,
+            _amount,
+            msg.sender,
+            _receiver
+        );
+        transferRequests.push(
+            Transfer(_amount, _receiver, 0, false, transferRequests.length)
+        );
+    }
 
     // Set your approval for one of the transfer requests.
     // Need to update the Transfer object.
@@ -41,8 +70,26 @@ contract Wallet {
     // When the amount of approvals for a transfer has reached the limit, this function should send the transfer to the recipient.
     // An owner should not be able to vote twice.
     // An owner should not be able to vote on a tranfer request that has already been sent.
-    function approve(uint256 _id) public onlyOwners {}
+    function approve(uint256 _id) public onlyOwners {
+        require(approvals[msg.sender][_id] == false);
+        require(transferRequests[_id].hasBeenSent == false);
+
+        approvals[msg.sender][_id] == true;
+        transferRequests[_id].approvals++;
+
+        emit ApprovalReceived(_id, transferRequests[_id].approvals, msg.sender);
+
+        if (transferRequests[_id].approvals >= limit) {
+            transferRequests[_id].hasBeenSent = true;
+            transferRequests[_id].receiver.transfer(
+                transferRequests[_id].amount
+            );
+            emit TransferApproved(_id);
+        }
+    }
 
     // Should return all transfer requests
-    function getTransferRequests() public view returns (Transfer[] memory) {}
+    function getTransferRequests() public view returns (Transfer[] memory) {
+        return transferRequests;
+    }
 }
